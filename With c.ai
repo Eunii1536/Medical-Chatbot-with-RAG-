@@ -1,0 +1,385 @@
+import asyncio
+import os
+import json
+import numpy as np
+from PyCharacterAI import get_client
+from PyCharacterAI.exceptions import SessionClosedError
+from dotenv import load_dotenv
+from groq import Groq
+from fastembed import TextEmbedding
+
+load_dotenv()
+
+token = "8bffea7f61747077512e09269760e1db113b59e7"
+character_id = "5pXTea64l3x-_I9n4saY01AXiCP6uGLITeRVX1fk94k"
+GROQ_API_KEY = os.getenv("GROQ_API_KEY") or "your_groq_api_key_here"
+
+SERIOUS_HEALTH_KEYWORDS = [
+    "heart pain", "chest pain", "difficulty breathing", "shortness of breath",
+    "severe pain", "intense headache", "heavy bleeding", "passing out",
+    "unconscious", "not waking up", "high fever and not improving", "severe fever",
+    "severe", "urgent", "doctor immediately"
+]
+
+class DoctorRetriever:
+    def __init__(self, dataset_path="dataset.json"):
+        self.embedding_model = TextEmbedding()
+        with open(dataset_path, "r", encoding="utf-8") as f:
+            self.data = json.load(f)
+        self.texts = []
+        for d in self.data:
+            availability = d.get("availability", "")
+            if isinstance(availability, list):
+                avail_str = " ".join([str(item) for item in availability if isinstance(item, str)])
+            else:
+                avail_str = str(availability)
+            parts = [
+                str(d.get("specialization", "")),
+                str(d.get("category", "")),
+                str(d.get("qualifications", "")),
+                avail_str,
+                str(d.get("name", ""))
+            ]
+            self.texts.append(" ".join(parts))
+        self.embeddings = np.array(list(self.embedding_model.embed(self.texts)))
+
+    def search(self, query, top_k=3):
+        query_emb = np.array(list(self.embedding_model.embed([query]))[0])
+        sims = np.dot(self.embeddings, query_emb) / (np.linalg.norm(self.embeddings, axis=1) * np.linalg.norm(query_emb) + 1e-8)
+        best_idx = np.argpartition(sims, -top_k)[-top_k:]
+        best_doctors = [self.data[i] for i in best_idx]
+        return best_doctors
+
+class MessageCensor:
+    def __init__(self, groq_client: Groq):
+        self.groq_client = groq_client
+        self.violation_indicators = [
+            "kms", "kys", "kill myself", "kill yourself", "suicide", "suicidal",
+            "self harm", "self-harm", "cut myself", "hurt myself", "end my life",
+            "want to die", "wanna die", "better off dead", "take my own life",
+            "harm myself", "overdose", "pills", "rope", "bridge", "jump off",
+            "slit my wrists", "hang myself", "shoot myself", "stab myself",
+            "worthless", "hopeless", "can't go on", "no point living"
+        ]
+
+    def needs_censoring(self, message: str) -> bool:
+        message_lower = message.lower().strip()
+        for indicator in self.violation_indicators:
+            if indicator in message_lower:
+                return True
+        return False
+
+    def censor_message(self, message: str) -> str:
+        if not self.needs_censoring(message):
+            return message
+        censor_prompt = f"""
+        You are a message paraphraser. Your job is to take a user message that might be filtered by Character.AI and rewrite it in a way that:
+
+        1. PRESERVES the exact emotional content and meaning
+        2. REMOVES explicit self-harm language that triggers AI filters
+        3. KEEPS the same tone, urgency, and desperation if present
+        4. MAINTAINS the user's actual feelings and mental state
+        5. MAKES it conversational and natural for AI chat
+        6. EXPRESSES the same pain/struggle without trigger words
+
+        Examples of good paraphrasing:
+        - "I want to kms" → "I'm feeling so hopeless and desperate right now"
+        - "I should just kill myself" → "I feel like there's no way out of this pain"
+        - "Maybe I should hurt myself" → "I'm having really dark thoughts and urges"
+        - "I'm going to end it all" → "I feel like I can't handle this anymore and want everything to stop"
+        - "I'm worthless and should die" → "I feel completely worthless and like I don't deserve to exist"
+
+        Keep the emotional intensity but make it chat-safe. Don't minimize their feelings.
+
+        Original message: "{message}"
+
+        Provide only the paraphrased version, nothing else:"""
+        try:
+            response = self.groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": censor_prompt}],
+                temperature=0.1,
+                max_tokens=150
+            )
+            censored = response.choices[0].message.content.strip()
+            if (censored.startswith('"') and censored.endswith('"')) or (censored.startswith("'") and censored.endswith("'")):
+                censored = censored[1:-1]
+            return censored
+        except Exception as e:
+            return self.basic_censor_fallback(message)
+
+    def basic_censor_fallback(self, message: str) -> str:
+        replacements = {
+            "kms": "feel so hopeless",
+            "kys": "you're really struggling",
+            "kill myself": "feel like giving up",
+            "kill yourself": "you're in so much pain",
+            "suicide": "ending the pain",
+            "suicidal": "having dark thoughts",
+            "self harm": "hurting inside",
+            "self-harm": "hurting inside",
+            "end my life": "can't take this anymore",
+            "want to die": "feel hopeless",
+            "wanna die": "feel hopeless",
+            "harm myself": "feel terrible inside",
+            "hurt myself": "feel so much pain",
+            "worthless": "feel like I don't matter",
+            "no point living": "can't see any hope"
+        }
+        censored = message.lower()
+        for original, replacement in replacements.items():
+            censored = censored.replace(original, replacement)
+        if message.isupper():
+            return censored.upper()
+        elif message.istitle():
+            return censored.title()
+        else:
+            return censored
+
+class EnhancedChatBot:
+    def __init__(self, token: str, character_id: str, groq_api_key: str):
+        self.token = token
+        self.character_id = character_id
+        self.groq_client = Groq(api_key=groq_api_key)
+        self.censor = MessageCensor(self.groq_client)
+        self.client = None
+        self.chat = None
+        self.me = None
+        self.doctor_retriever = DoctorRetriever("dataset.json")
+
+    async def detect_language_and_style(self, user_message: str):
+        prompt = f"""
+        Analyze the following text and determine:
+        1. The primary language/style being used
+        2. Whether it's Hinglish (Hindi words written in English script mixed with English)
+
+        Text: "{user_message}"
+
+        Respond in JSON format:
+        {{
+            "language": "...",
+            "is_hinglish": true/false,
+            "style": "..."
+        }}
+
+        Examples:
+        - "Hello kaise ho?" → {{"language": "Hinglish", "is_hinglish": true, "style": "Hindi-English mix"}}
+        - "मैं ठीक हूँ" → {{"language": "Hindi", "is_hinglish": false, "style": "Pure Hindi"}}
+        - "I am fine" → {{"language": "English", "is_hinglish": false, "style": "Pure English"}}
+
+        Provide only the JSON, no extra text.
+        """
+        try:
+            response = self.groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=50,
+            )
+            content = response.choices[0].message.content.strip()
+            import json
+            data = json.loads(content)
+            return data.get("language", "English"), data.get("is_hinglish", False), data.get("style", "")
+        except Exception as e:
+            return "English", False, ""
+
+    async def translate_to_english(self, user_message: str):
+        prompt = f"""
+        You are a multi-lingual assistant. Translate the following message to proper English.
+        Handle Hinglish, Hindi, and other Indian languages appropriately.
+        
+        Input message: "{user_message}"
+
+        Provide ONLY the English translation, nothing else.
+        """
+        try:
+            response = self.groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=150,
+            )
+            translation = response.choices[0].message.content.strip()
+            if (translation.startswith('"') and translation.endswith('"')) or (translation.startswith("'") and translation.endswith("'")):
+                translation = translation[1:-1]
+            return translation
+        except Exception as e:
+            return user_message
+
+    async def convert_to_hinglish(self, english_response: str, user_style: str):
+        prompt = f"""
+        You are a Hinglish conversion expert. Convert the following English text to Hinglish style that matches the user's original style.
+
+        User's original style: {user_style}
+        English text to convert: "{english_response}"
+
+        Hinglish conversion guidelines:
+        - Mix Hindi words (written in English) with English naturally
+        - Keep the conversational tone
+        - Use common Hindi words like: kya, hai, nahi, acha, bas, etc.
+        - Examples: "How are you?" → "Kaise ho?" or "Aap kaise hain?"
+        - "I am fine" → "Main theek hun" or "I'm fine yaar"
+
+        Provide ONLY the Hinglish conversion, nothing else.
+        """
+        try:
+            response = self.groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                max_tokens=500,
+            )
+            hinglish_text = response.choices[0].message.content.strip()
+            if (hinglish_text.startswith('"') and hinglish_text.endswith('"')) or (hinglish_text.startswith("'") and hinglish_text.endswith("'")):
+                hinglish_text = hinglish_text[1:-1]
+            return hinglish_text
+        except Exception as e:
+            return english_response
+
+    async def translate_from_english(self, original_lang: str, english_response: str):
+        prompt = f"""
+        You are a multi-lingual assistant. Translate the following English text to {original_lang} language.
+
+        English text: "{english_response}"
+
+        Provide ONLY the translated text, nothing else.
+        """
+        try:
+            response = self.groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=500,
+            )
+            translation = response.choices[0].message.content.strip()
+            if (translation.startswith('"') and translation.endswith('"')) or (translation.startswith("'") and translation.endswith("'")):
+                translation = translation[1:-1]
+            return translation
+        except Exception as e:
+            return english_response
+
+    async def extract_illness_and_specialty(self, user_message: str):
+        prompt = f"""
+        You are a medical assistant. Given the user's message below, 
+        1. Identify the main illness or symptoms described.
+        2. List the doctor specialties appropriate for treating those symptoms.
+
+        User message: "{user_message}"
+
+        Respond in JSON format:
+        {{
+            "illness": "...",
+            "specialties": ["..."] 
+        }}
+        Provide only the JSON, no extra text.
+        """
+        try:
+            response = self.groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=100,
+            )
+            content = response.choices[0].message.content.strip()
+            import json
+            data = json.loads(content)
+            illness = data.get("illness", "")
+            specialties = data.get("specialties", [])
+            return illness, specialties
+        except Exception as e:
+            return None, []
+
+    async def initialize(self):
+        try:
+            self.client = await get_client(token=self.token)
+            self.me = await self.client.account.fetch_me()
+            self.chat, greeting_message = await self.client.chat.create_chat(self.character_id)
+            print(f"[{greeting_message.author_name}]: {greeting_message.get_primary_candidate().text}")
+        except Exception as e:
+            raise
+
+    async def run_chat(self):
+        await self.initialize()
+        try:
+            while True:
+                print(f"\n[{self.me.name}]: ", end="")
+                user_message = input()
+                if not user_message.strip():
+                    continue
+
+                # Step 1: Detect language and style (including Hinglish)
+                language, is_hinglish, style = await self.detect_language_and_style(user_message)
+
+                # Step 2: Translate to English if needed
+                english_message = await self.translate_to_english(user_message)
+
+                # Step 3: Check for serious medical issues
+                illness, specialties = await self.extract_illness_and_specialty(english_message)
+                if illness and any(keyword in illness.lower() for keyword in SERIOUS_HEALTH_KEYWORDS):
+                    if specialties:
+                        rag_query = ", ".join(specialties)
+                        doctors = self.doctor_retriever.search(rag_query, top_k=3)
+                        print("\nRelevant specialists for your condition:")
+                        for doc in doctors:
+                            print(f"Name: {doc.get('name', 'N/A')}")
+                            print(f"Specialization: {doc.get('specialization', 'N/A')}")
+                            print(f"Category: {doc.get('category', 'N/A')}")
+                            print(f"Qualifications: {doc.get('qualifications', 'N/A')}")
+                            print(f"Phone: {doc.get('phone', 'N/A')}")
+                            print(f"Email: {doc.get('email', 'N/A')}")
+                            print(f"Consultation Fee: {doc.get('consultationFee', 'N/A')}")
+                            print(f"Availability: {doc.get('availability', 'N/A')}")
+                            print("-" * 40)
+                    continue
+
+                # Step 4: Censor message if needed
+                paraphrased_message = self.censor.censor_message(english_message)
+
+                # Step 5: Send to Character.AI and collect response silently
+                answer = await self.client.chat.send_message(
+                    self.character_id,
+                    self.chat.chat_id,
+                    paraphrased_message,
+                    streaming=True
+                )
+
+                full_response = ""
+                async for response in answer:
+                    text = response.get_primary_candidate().text
+                    full_response = text
+
+                # Step 6: Only show final translated response
+                if is_hinglish:
+                    # Convert English response to Hinglish and show only that
+                    hinglish_response = await self.convert_to_hinglish(full_response, style)
+                    print(f"[{response.author_name}]: {hinglish_response}")
+                elif language.lower() != "english":
+                    # Translate to original language and show only that
+                    translated_output = await self.translate_from_english(language, full_response)
+                    print(f"[{response.author_name}]: {translated_output}")
+                else:
+                    # Show original English response
+                    print(f"[{response.author_name}]: {full_response}")
+
+        except KeyboardInterrupt:
+            print("\n👋 Chat ended. Take care!")
+        except SessionClosedError:
+            print("Session closed. Bye!")
+        except Exception as e:
+            pass
+        finally:
+            if self.client:
+                await self.client.close_session()
+
+async def main():
+    if GROQ_API_KEY == "your_groq_api_key_here":
+        print("❌ ERROR: Please set your Groq API key!")
+        return
+    try:
+        bot = EnhancedChatBot(token, character_id, GROQ_API_KEY)
+        await bot.run_chat()
+    except Exception as e:
+        pass
+
+if __name__ == "__main__":
+    asyncio.run(main())

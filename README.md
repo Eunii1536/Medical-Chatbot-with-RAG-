@@ -1,203 +1,127 @@
-# Medical AI Chatbot 🩺
-
-A comprehensive medical chatbot application that provides health consultations and specialist recommendations using AI-powered analysis. Built with Streamlit, LangChain, and Groq LLM.
-
-## Features
-
-### 🤖 AI-Powered Medical Consultation
-- **Intelligent Health Analysis**: Uses Groq's LLaMA 3-70B model for medical query understanding
-- **Symptom Assessment**: Analyzes user symptoms and health concerns
-- **Conversational Memory**: Maintains chat history for contextual responses
-- **Concise Responses**: Provides brief, direct medical advice (2-3 sentences)
-
-### 🏥 Specialist Recommendation System
-- **RAG-Based Doctor Search**: Uses LangChain and FAISS for intelligent doctor matching
-- **Condition Detection**: Automatically identifies serious medical conditions requiring specialist care
-- **Smart Referrals**: Recommends appropriate specialists based on detected conditions
-- **Doctor Database**: Comprehensive database with doctor information, specializations, and contact details
-
-### 🖥️ User-Friendly Interface
-- **Streamlit Web App**: Clean, responsive web interface
-- **Real-time Chat**: Interactive chat interface with message history
-- **Specialist Cards**: Professional display of recommended doctors
-- **Medical Analysis Display**: Clear presentation of condition analysis and recommendations
-
-## Quick Start
-
-### Prerequisites
-- Python 3.8+
-- Groq API Key
-- Required dependencies (see requirements section)
-
-### Installation
-
-1. **Clone the repository**
-```bash
-git clone https://github.com/yourusername/medical-ai-chatbot.git
-cd medical-ai-chatbot
-```
-
-2. **Install dependencies**
-```bash
-pip install streamlit groq python-dotenv langchain-groq langchain-huggingface langchain-community faiss-cpu sentence-transformers
-```
-
-3. **Set up environment variables**
-Create a `.env` file in the root directory:
-```env
-GROQ_API_KEY=your_groq_api_key_here
-```
-
-4. **Add doctor database**
-Place your `healthver2.doctors.json` file in the project root directory.
-
-5. **Run the application**
-```bash
-streamlit run app.py
-```
-
-## Usage
-
-### Web Interface
-1. Open your browser and go to `http://localhost:8501`
-2. Type your health concerns in the chat input
-3. Get AI-powered medical advice and specialist recommendations
-4. View recommended doctors if serious conditions are detected
-
-### Command Line Interface
-```bash
-python app.py
-```
-
-### Example Interactions
-
-**General Health Query:**
-```
-User: "I have a mild headache, what should I do?"
-Bot: "For mild headaches, try rest, hydration, and over-the-counter pain relievers. Avoid screens and get adequate sleep."
-```
-
-**Serious Condition Detection:**
-```
-User: "I'm having chest pain and shortness of breath"
-Bot: "Chest pain with breathing issues needs immediate attention. I'll recommend specialists."
-[Shows cardiologist recommendations with contact details]
-```
-
-## Architecture
-
-### Core Components
-
-1. **MedicalChatbot Class**: Main chatbot logic and conversation handling
-2. **RAG System**: Retrieval-Augmented Generation for doctor recommendations using:
-   - LangChain for document processing
-   - FAISS for vector storage and similarity search
-   - HuggingFace embeddings for text representation
-3. **Medical Analysis Engine**: Groq LLM-powered condition detection and severity assessment
-4. **Streamlit Interface**: Web application frontend
-
-### Technical Stack
-- **Frontend**: Streamlit
-- **LLM**: Groq LLaMA 3-70B-8192
-- **Vector Database**: FAISS
-- **Embeddings**: HuggingFace sentence-transformers/all-MiniLM-L6-v2
-- **Framework**: LangChain
-- **Language**: Python 3.8+
-
-## Configuration
-
-### Environment Variables
-```env
-GROQ_API_KEY=your_groq_api_key_here
-```
-
-### Doctor Database Format
-The `healthver2.doctors.json` should contain doctor information in this format:
-```json
-[
-  {
-    "_id": {"$oid": "doctor_id"},
-    "name": "Dr. John Smith",
-    "specialization": "Cardiology",
-    "category": "Heart Specialist",
-    "phone": "+1234567890",
-    "email": "doctor@example.com",
-    "experience": 15,
-    "qualifications": ["MD", "FACC"]
-  }
-]
-```
-
-## Features in Detail
-
-### 🔍 Medical Analysis
-- **Aggressive Detection**: Identifies serious conditions requiring immediate attention
-- **Condition Categories**: Cancer, cardiovascular, neurological, mental health, chronic diseases
-- **Specialty Mapping**: Automatically maps conditions to appropriate medical specialties
-- **JSON-Structured Analysis**: Provides structured medical assessment data
-
-### 👨‍⚕️ Specialist Recommendations
-- **Intelligent Matching**: Uses semantic search to find relevant specialists
-- **Comprehensive Information**: Shows doctor name, specialization, experience, and contact details
-- **Top-K Retrieval**: Returns most relevant specialists based on condition analysis
-- **Lazy Loading**: Loads doctor database only when needed for optimal performance
-
-### 💬 Chat Management
-- **Session-Based History**: Maintains separate chat histories for different sessions
-- **Context Awareness**: Uses recent conversation history for better responses
-- **Memory Management**: Automatically manages conversation length to prevent memory issues
-- **Multi-Interface Support**: Both web and command-line interfaces available
-
-## API Reference
-
-### Main Methods
-
-#### `chat(prompt, session_id="default")`
-Main chat function that processes user queries and returns medical advice.
-
-**Parameters:**
-- `prompt` (str): User's health-related query
-- `session_id` (str): Session identifier for chat history
-
-**Returns:**
-```python
-{
-    "response": "AI response text",
-    "analysis": {
-        "detected_conditions": ["condition1", "condition2"],
-        "is_serious": True/False,
-        "recommended_specialty": "specialty name",
-        "explanation": "analysis explanation"
-    },
-    "specialists": [
-        {
-            "doctor_id": "id",
-            "name": "Dr. Name",
-            "specialization": "specialty",
-            "phone": "phone_number",
-            "experience": years
-        }
-    ]
-}
-```
-
-#### `clear_chat(session_id="default")`
-Clears chat history for specified session.
-
-#### `get_specialists_by_specialty(specialty, limit=5)`
-Retrieves specialists by medical specialty.
-
-## Security & Privacy
-
-⚠️ **Important Security Notes:**
-- This application is for informational purposes only
-- Always consult qualified healthcare professionals for medical advice
-- Do not share sensitive personal health information
-- Conversations are stored temporarily in session memory
-- No persistent data storage of user conversations
-
-## Disclaimer
-
-**Medical Disclaimer**: This chatbot provides general medical information only and is not a substitute for professional medical advice, diagnosis, or treatment. Always seek the advice of qualified healthcare providers with questions about medical conditions. Never disregard professional medical advice or delay seeking it because of information received from this chatbot.
+Here’s a professional and detailed project description you can use for your GitHub README page. It explains what your code does, how it works, and the technologies involved.  
 
 ***
+
+# 🧠 Enhanced Multilingual AI Health Chatbot
+
+This project is an **intelligent AI chatbot system** that seamlessly integrates **Character.AI**, **Groq’s LLaMA-3.3 model**, and **FastEmbed embeddings** to provide **emotionally safe, multilingual, and contextually aware** conversations with healthcare-related assistance.  
+
+It is built in **Python (async/await design)** and can understand, translate, paraphrase, and respond in English, Hindi, or Hinglish—while detecting and handling sensitive or medical contexts with care.
+
+***
+
+## 🚀 Key Features
+
+### 💬 1. Character.AI Integration
+The bot connects to a specific **Character.AI persona** using `PyCharacterAI`. It engages in natural, dynamic conversation powered by Character.AI’s chat interface, while your Groq model ensures intelligent preprocessing and filtering before messages are sent.
+
+### 🔠 2. Multilingual & Hinglish Support
+The chatbot detects the **language and style** of the user’s message (English, Hindi, or Hinglish) using Groq’s large language model.  
+
+It then:
+- Translates non-English messages into English before interaction.  
+- Converts Character.AI’s English responses back into the original language or Hinglish.  
+- Maintains tone, informality, and cultural nuances.
+
+### 💉 3. Smart Medical Intent Detection
+A **medical assistant submodule** analyzes the user’s input to extract:
+- The **illness or symptom** mentioned.
+- The appropriate **doctor specialties** for that condition.
+
+If the input indicates **serious health risks** (like chest pain, high fever, or passing out), the system fetches relevant doctors from a structured dataset (`dataset.json`) using an **embedding-based retriever** powered by FastEmbed and NumPy similarity search.
+
+### 🩺 4. Doctor Recommendation Engine
+The **DoctorRetriever** class embeds doctor descriptions and retrieves the **top 3 relevant specialists** using cosine similarity.  
+
+Displayed doctor details include:
+- Name  
+- Specialization and category  
+- Qualifications  
+- Availability  
+- Contact information  
+- Consultation fee  
+
+This acts as a **lightweight offline RAG (Retrieval-Augmented Generation)** component.
+
+### 🧩 5. Sensitive Message Censorship and Paraphrasing
+The **MessageCensor** class identifies self-harm or suicidal expressions using a keyword detector.  
+If any violation indicators are found, the message is **paraphrased via Groq’s LLaMA model** to:
+- Preserve the user’s emotional tone.  
+- Remove filtered or trigger phrases (like *“I want to die”* → *“I feel like I can’t go on”*).  
+- Maintain empathy and conversational flow.  
+
+If API calls fail, a safe **rule-based fallback** handles censorship gracefully.
+
+### 🧠 6. Emotionally Safe Chat Flow
+Each chat message follows a carefully structured flow:
+1. Detect language and user style.  
+2. Translate the user message to English (if needed).  
+3. Check for serious medical or self-harm phrases.  
+4. Retrieve doctor info if health risk is detected.  
+5. Censor self-harm phrases safely.  
+6. Send the sanitized input to Character.AI.  
+7. Translate Character.AI’s final response to original language or Hinglish.  
+
+***
+
+## 🏗️ Tech Stack
+
+| Component | Technology Used |
+|------------|------------------|
+| **Core** | Python (asyncio based) |
+| **Language Model** | Groq API – LLaMA 3.3 70B |
+| **Chat Connection** | PyCharacterAI |
+| **Embeddings** | FastEmbed |
+| **Vector Math** | NumPy |
+| **Environment Management** | dotenv |
+| **Data** | JSON-based doctor dataset (`dataset.json`) |
+
+***
+
+## ⚙️ Setup and Usage
+
+### Prerequisites
+- Python 3.9 or above  
+- Groq API key  
+- Character.AI token  
+- `dataset.json` file with doctor details  
+
+### Installation
+```bash
+git clone https://github.com/yourusername/enhanced-ai-doctor-chatbot.git
+cd enhanced-ai-doctor-chatbot
+pip install -r requirements.txt
+```
+
+### Environment Variables
+Create a `.env` file and add:
+```env
+GROQ_API_KEY=your_groq_api_key_here
+```
+
+### Run the Chatbot
+```bash
+python main.py
+```
+
+***
+
+## 🧩 Project Structure
+
+```
+📦 enhanced-ai-doctor-chatbot/
+ ┣ 📜 main.py                  # Entry point; initializes and runs chatbot
+ ┣ 📜 dataset.json             # Doctor database
+ ┣ 📜 requirements.txt         # Dependencies
+ ┣ 📜 .env                     # Environment variables
+ ┗ 📂 modules/
+    ┣ DoctorRetriever.py       # Doctor search with embeddings
+    ┣ MessageCensor.py         # Self-harm detector & paraphraser
+    ┣ EnhancedChatBot.py       # Main conversational logic
+```
+
+
+
+***
+
+Would you like me to format this as a **ready-to-use GitHub README.md** (with emojis, table of contents, and badges)?
